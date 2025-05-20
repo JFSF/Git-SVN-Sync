@@ -11,7 +11,8 @@ from datetime import datetime
 from PyQt6.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QToolBar, QStatusBar, QFileDialog,
                              QTreeWidget, QTreeWidgetItem, QTextEdit, QSplitter, QMessageBox,
-                             QTabWidget, QMenu, QMenuBar, QComboBox, QHeaderView, QGroupBox)
+                             QTabWidget, QMenu, QMenuBar, QComboBox, QHeaderView, QGroupBox,
+                             QDialog)
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QThread
 from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QTextCharFormat
 
