@@ -878,9 +878,9 @@ class MainWindow(QMainWindow):
         
         if settings_dialog.exec() == QDialog.DialogCode.Accepted:
             # Atualizar configurações
-            self.git_repo_url = settings_dialog.git_url_var.get()
-            self.svn_repo_url = settings_dialog.svn_url_var.get()
-            self.local_working_copy = settings_dialog.working_copy_var.get()
+            self.git_repo_url = settings_dialog.git_url_edit.text()
+            self.svn_repo_url = settings_dialog.svn_url_edit.text()
+            self.local_working_copy = settings_dialog.working_copy_edit.text()
             
             # Salvar no config manager
             self.config.set("git_repo_url", self.git_repo_url)
@@ -888,7 +888,7 @@ class MainWindow(QMainWindow):
             self.config.set("local_working_copy", self.local_working_copy)
             
             # Aplicar configurações de tema
-            theme = settings_dialog.theme_var.get()
+            theme = settings_dialog.theme_combo.currentText()
             if theme != self.config.get("ui.theme", "system"):
                 self.config.set("ui.theme", theme)
                 reply = QMessageBox.question(
