@@ -27,6 +27,12 @@ class LogManager:
         # Formatos de texto para diferentes níveis de log
         self.text_formats = {}
         
+        # Configurar formatos de texto se o widget estiver disponível
+        if self.log_widget:
+            self.setup_text_tags()
+    
+    def setup_text_tags(self):
+        """Configura os formatos de texto para diferentes níveis de log"""
         # INFO - Normal
         info_format = QTextCharFormat()
         info_format.setForeground(self.log_colors["INFO"])
@@ -76,6 +82,10 @@ class LogManager:
         # Obter o cursor e formatar o texto
         cursor = self.log_widget.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
+        
+        # Certificar que temos o formato correto para o nível
+        if level not in self.text_formats:
+            self.setup_text_tags()
         
         # Aplicar o formato para este nível
         format = self.text_formats.get(level, self.text_formats["INFO"])
