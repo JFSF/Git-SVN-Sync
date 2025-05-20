@@ -1,4 +1,6 @@
-#!/usr/bin/env python3
+def cleanup_threads(self):
+        """Remove threads finalizadas da lista de threads ativas"""
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -40,15 +42,22 @@ class WorkerThread(QThread):
         self.function = function
         self.args = args
         self.kwargs = kwargs
+        self.running = True
     
     def run(self):
         try:
-            if callable(self.function):
+            if callable(self.function) and self.running:
                 result = self.function(*self.args, **self.kwargs)
-                self.finished.emit(True, result)
+                if self.running:
+                    self.finished.emit(True, result)
         except Exception as e:
-            self.log.emit(f"Error in worker thread: {str(e)}", "ERROR")
-            self.finished.emit(False, str(e))
+            if self.running:
+                self.log.emit(f"Error in worker thread: {str(e)}", "ERROR")
+                self.finished.emit(False, str(e))
+    
+    def stop(self):
+        """Para a execução da thread"""
+        self.running = False
 
 
 class MainWindow(QMainWindow):
@@ -63,6 +72,9 @@ class MainWindow(QMainWindow):
         self.git_repo_url = self.config.get('git_repo_url', '')
         self.svn_repo_url = self.config.get('svn_repo_url', '')
         self.local_working_copy = self.config.get('local_working_copy', '')
+        
+        # Rastrear threads ativas
+        self.active_threads = []
         
         # Configurar janela principal
         self.setWindowTitle("Git-SVN Sync Tool")
@@ -403,10 +415,14 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("Updating status...")
         
         # Usar worker thread para não bloquear a interface
-        worker = WorkerThread(self._update_status_worker)
-        worker.finished.connect(self._on_status_updated)
-        worker.log.connect(self.logger.log)
-        worker.start()
+        self.status_worker = WorkerThread(self._update_status_worker)
+        self.status_worker.finished.connect(self._on_status_updated)
+        self.status_worker.log.connect(self.logger.log)
+        self.active_threads.append(self.status_worker)
+        self.status_worker.start()
+        
+        # Limpar threads finalizadas
+        self.cleanup_threads()
     
     def _update_status_worker(self):
         """Worker para atualizar status (executado em thread separada)"""
@@ -954,6 +970,21 @@ Licensed under MIT License
         # Parar auto-sync se estiver ativo
         if self.auto_sync_manager:
             self.auto_sync_manager.stop()
+        
+        # Parar todas as threads ativas
+        for thread in list(self.active_threads):
+            if thread.isRunning():
+                thread.stop()
+                thread.wait(100)  # Aguardar até 100ms para a thread terminar
+        
+        # Aguardar qualquer thread ativa ser finalizada
+        import time
+        
+        # Pequena pausa para permitir que threads terminem
+        time.sleep(0.1)
+        
+        # Processar eventos pendentes
+        QApplication.processEvents()
         
         # Aceitar o evento para fechar a janela
         event.accept()

@@ -3,6 +3,7 @@
 
 import os
 import sys
+import signal
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 from PyQt6.QtGui import QPixmap, QFont
 from PyQt6.QtCore import Qt, QTimer
@@ -15,6 +16,9 @@ from ui.qt.resources import setup_application_style
 
 def main():
     """Função principal da aplicação"""
+    # Configurar signal handler para saída limpa
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    
     # Inicializar aplicação Qt
     app = QApplication(sys.argv)
     app.setApplicationName("Git-SVN Sync Tool")
@@ -49,6 +53,9 @@ def main():
     # Pausar brevemente para exibir a splash screen
     QTimer.singleShot(1000, lambda: initialize_main_window(app, splash, config, dependencies_met, missing))
     
+    # Configurar saída limpa
+    app.aboutToQuit.connect(lambda: prepare_exit(app))
+    
     # Iniciar loop de eventos
     return app.exec()
 
@@ -72,6 +79,12 @@ def initialize_main_window(app, splash, config, dependencies_met, missing):
         traceback.print_exc()
         QMessageBox.critical(None, "Error", f"An unexpected error occurred: {str(e)}")
         sys.exit(1)
+
+
+def prepare_exit(app):
+    """Prepara uma saída limpa da aplicação"""
+    # Processar eventos pendentes
+    app.processEvents()
 
 
 if __name__ == "__main__":
