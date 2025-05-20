@@ -414,15 +414,15 @@ class MainWindow(QMainWindow):
         """Atualiza o status dos repositórios"""
         self.statusBar.showMessage("Updating status...")
         
+        # Limpar threads antigas que já terminaram
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        
         # Usar worker thread para não bloquear a interface
         self.status_worker = WorkerThread(self._update_status_worker)
         self.status_worker.finished.connect(self._on_status_updated)
         self.status_worker.log.connect(self.logger.log)
         self.active_threads.append(self.status_worker)
         self.status_worker.start()
-        
-        # Limpar threads finalizadas
-        self.cleanup_threads()
     
     def _update_status_worker(self):
         """Worker para atualizar status (executado em thread separada)"""
@@ -694,11 +694,15 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
         
+        # Limpar threads antigas que já terminaram
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Initializing Git repository...")
         worker = WorkerThread(self.git_manager.init_repo, self.git_repo_url)
         worker.finished.connect(self._on_git_init_complete)
         worker.log.connect(self.logger.log)
+        self.active_threads.append(worker)
         worker.start()
     
     def _on_git_init_complete(self, success, result):
@@ -718,11 +722,15 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", "Git repository not initialized")
             return
         
+        # Limpar threads antigas que já terminaram
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Syncing with Git remote...")
         worker = WorkerThread(self.git_manager.sync_with_remote)
         worker.finished.connect(self._on_git_sync_complete)
         worker.log.connect(self.logger.log)
+        self.active_threads.append(worker)
         worker.start()
     
     def _on_git_sync_complete(self, success, result):
@@ -742,11 +750,15 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", "SVN repository not initialized")
             return
         
+        # Limpar threads antigas que já terminaram
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Updating from SVN...")
         worker = WorkerThread(self.svn_manager.update)
         worker.finished.connect(self._on_svn_update_complete)
         worker.log.connect(self.logger.log)
+        self.active_threads.append(worker)
         worker.start()
     
     def _on_svn_update_complete(self, success, result):
@@ -774,6 +786,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", "Sync manager not initialized")
             return
         
+        # Limpar threads antigas que já terminaram
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Synchronizing repositories...")
         
@@ -789,6 +804,7 @@ class MainWindow(QMainWindow):
         
         worker.finished.connect(self._on_sync_repos_complete)
         worker.log.connect(self.logger.log)
+        self.active_threads.append(worker)
         worker.start()
     
     def _on_sync_repos_complete(self, success, result):
@@ -826,11 +842,15 @@ class MainWindow(QMainWindow):
             self.update_status()
             return
         
+        # Limpar threads antigas que já terminaram
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+        
         # Fazer checkout
         self.statusBar.showMessage(f"Checking out branch '{branch_name}'...")
         worker = WorkerThread(self.git_manager.repo.git.checkout, branch_name)
         worker.finished.connect(lambda success, result: self._on_checkout_completed(success, result, branch_name))
         worker.log.connect(self.logger.log)
+        self.active_threads.append(worker)
         worker.start()
     
     def _on_checkout_completed(self, success, result, branch_name):
