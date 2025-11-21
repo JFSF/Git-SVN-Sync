@@ -1,10 +1,9 @@
-def cleanup_threads(self):
-        """Remove threads finalizadas da lista de threads ativas"""
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
 import sys
+import traceback
 from threading import Thread
 from datetime import datetime
 
@@ -14,7 +13,7 @@ from PyQt6.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, QH
                              QTabWidget, QMenu, QMenuBar, QComboBox, QHeaderView, QGroupBox,
                              QDialog)
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QThread
-from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QTextCharFormat
+from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QTextCharFormat, QKeySequence, QShortcut
 
 from utils.logger import LogManager
 from core.git_manager import GitManager
@@ -30,6 +29,7 @@ from ui.qt.task_integration_dialog import TaskIntegrationDialog
 from features.commit_templates import CommitTemplateManager
 from features.task_integration import TaskIntegrationManager
 from features.auto_sync import AutoSyncManager
+from utils.sync_history import SyncHistory
 from ui.qt.resources import get_icon, setup_application_style
 
 
@@ -97,23 +97,27 @@ class MainWindow(QMainWindow):
         self.log_text.setReadOnly(True)
         
         # Inicializar o logger
-        log_file = self.config.get("logging.log_file_path", "") 
+        log_file = self.config.get("logging.log_file_path", "")
         if self.config.get("logging.enable_file_logging", False) and log_file:
             self.logger = LogManager(self.log_text, log_file)
         else:
             self.logger = LogManager(self.log_text)
-        
+
+        # Histórico de sincronizações
+        self.sync_history = SyncHistory(self.config)
+
         # Gerenciadores de repositório
         if self.local_working_copy:
             self.git_manager = GitManager(self.local_working_copy, self.logger)
             self.svn_manager = SVNManager(self.local_working_copy, self.logger)
-            
+
             # Gerenciador de sincronização
             self.sync_manager = SyncManager(
-                self.git_manager, 
-                self.svn_manager, 
-                self.logger, 
-                self.config
+                self.git_manager,
+                self.svn_manager,
+                self.logger,
+                self.config,
+                self.sync_history
             )
         else:
             self.git_manager = None
@@ -172,6 +176,9 @@ class MainWindow(QMainWindow):
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
         self.statusBar.showMessage("Ready")
+
+        # Configurar atalhos de teclado
+        self.setup_shortcuts()
     
     def create_status_panel(self, main_layout):
         """Cria o painel de status do repositório"""
@@ -334,6 +341,7 @@ class MainWindow(QMainWindow):
         file_menu = QMenu("File", self)
         
         settings_action = QAction(get_icon("settings"), "Settings", self)
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self.open_settings)
         file_menu.addAction(settings_action)
         
@@ -351,6 +359,7 @@ class MainWindow(QMainWindow):
         git_menu.addAction(init_git_action)
         
         commit_action = QAction(get_icon("commit"), "Commit Changes", self)
+        commit_action.setShortcut(QKeySequence("Ctrl+G"))
         commit_action.triggered.connect(self.open_commit_dialog)
         git_menu.addAction(commit_action)
         
@@ -361,6 +370,7 @@ class MainWindow(QMainWindow):
         git_menu.addSeparator()
         
         branch_manager_action = QAction("Branch Manager", self)
+        branch_manager_action.setShortcut(QKeySequence("Ctrl+B"))
         branch_manager_action.triggered.connect(self.open_branch_manager)
         git_menu.addAction(branch_manager_action)
         
@@ -393,6 +403,7 @@ class MainWindow(QMainWindow):
         tools_menu.addSeparator()
         
         sync_both_action = QAction("Synchronize Both Repositories", self)
+        sync_both_action.setShortcut(QKeySequence("Ctrl+S"))
         sync_both_action.triggered.connect(self.start_sync_repos)
         tools_menu.addAction(sync_both_action)
         
@@ -402,7 +413,13 @@ class MainWindow(QMainWindow):
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
-        
+
+        help_menu.addSeparator()
+
+        sync_history_action = QAction("Sync History", self)
+        sync_history_action.triggered.connect(self.show_sync_history)
+        help_menu.addAction(sync_history_action)
+
         # Adicionar menus à barra de menus
         menu_bar = self.menuBar()
         menu_bar.addMenu(file_menu)
@@ -411,13 +428,55 @@ class MainWindow(QMainWindow):
         menu_bar.addMenu(tools_menu)
         menu_bar.addMenu(help_menu)
     
+    def setup_shortcuts(self):
+        """Configura atalhos de teclado para ações comuns"""
+        # F5 - Atualizar status
+        refresh_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F5), self)
+        refresh_shortcut.activated.connect(self.update_status)
+
+        # Ctrl+R - Atualizar status
+        ctrl_r_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+        ctrl_r_shortcut.activated.connect(self.update_status)
+
+        # Ctrl+G - Commit Git
+        ctrl_g_shortcut = QShortcut(QKeySequence("Ctrl+G"), self)
+        ctrl_g_shortcut.activated.connect(self.open_commit_dialog)
+
+        # Ctrl+S - Sincronizar repositórios
+        ctrl_s_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        ctrl_s_shortcut.activated.connect(self.start_sync_repos)
+
+        # Ctrl+D - Ver diff do arquivo selecionado
+        ctrl_d_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        ctrl_d_shortcut.activated.connect(self.show_diff_for_selected)
+
+        # Ctrl+B - Gerenciador de branches
+        ctrl_b_shortcut = QShortcut(QKeySequence("Ctrl+B"), self)
+        ctrl_b_shortcut.activated.connect(self.open_branch_manager)
+
+        # Ctrl+, (vírgula) - Configurações
+        ctrl_comma_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+        ctrl_comma_shortcut.activated.connect(self.open_settings)
+
+        # Ctrl+L - Limpar log
+        ctrl_l_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        ctrl_l_shortcut.activated.connect(self.clear_log)
+
+        # Ctrl+Q - Sair
+        ctrl_q_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
+        ctrl_q_shortcut.activated.connect(self.close)
+
+    def cleanup_threads(self):
+        """Remove threads finalizadas da lista de threads ativas"""
+        self.active_threads = [t for t in self.active_threads if t.isRunning()]
+
     def update_status(self):
         """Atualiza o status dos repositórios"""
         self.statusBar.showMessage("Updating status...")
-        
+
         # Limpar threads antigas que já terminaram
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]
-        
+        self.cleanup_threads()
+
         # Usar worker thread para não bloquear a interface
         self.status_worker = WorkerThread(self._update_status_worker)
         self.status_worker.finished.connect(self._on_status_updated)
@@ -696,8 +755,8 @@ class MainWindow(QMainWindow):
             return
         
         # Limpar threads antigas que já terminaram
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]
-        
+        self.cleanup_threads()
+
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Initializing Git repository...")
         worker = WorkerThread(self.git_manager.init_repo, self.git_repo_url)
@@ -712,9 +771,11 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Success", "Git repository initialized successfully")
             self.statusBar.showMessage("Git repository initialized", 3000)
         else:
-            QMessageBox.critical(self, "Error", "Failed to initialize Git repository")
+            error_msg = str(result) if result else "Unknown error"
+            self.logger.log(f"Git initialization failed: {error_msg}", "ERROR")
+            QMessageBox.critical(self, "Error", f"Failed to initialize Git repository:\n{error_msg}")
             self.statusBar.showMessage("Git initialization failed", 3000)
-        
+
         self.update_status()
     
     def sync_git_repo(self):
@@ -724,8 +785,8 @@ class MainWindow(QMainWindow):
             return
         
         # Limpar threads antigas que já terminaram
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]
-        
+        self.cleanup_threads()
+
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Syncing with Git remote...")
         worker = WorkerThread(self.git_manager.sync_with_remote)
@@ -752,8 +813,8 @@ class MainWindow(QMainWindow):
             return
         
         # Limpar threads antigas que já terminaram
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]
-        
+        self.cleanup_threads()
+
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Updating from SVN...")
         worker = WorkerThread(self.svn_manager.update)
@@ -778,8 +839,46 @@ class MainWindow(QMainWindow):
         if not self.svn_manager:
             QMessageBox.critical(self, "Error", "SVN repository not initialized")
             return
-        
-        QMessageBox.information(self, "Not Implemented", "SVN commit dialog not implemented yet")
+
+        # Obter arquivos modificados do SVN
+        svn_files = self.svn_manager.get_modified_files()
+        if not svn_files:
+            QMessageBox.information(self, "Info", "No modified files in SVN repository")
+            return
+
+        # Obter templates de commit
+        commit_templates = self.template_manager.get_templates()
+
+        # Criar e mostrar diálogo (reusar CommitDialog que funciona para ambos)
+        commit_dialog = CommitDialog(self, svn_files, commit_templates)
+        commit_dialog.setWindowTitle("SVN Commit")
+
+        if commit_dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_files = commit_dialog.selected_files
+            commit_message = commit_dialog.commit_message
+
+            # Fazer commit SVN
+            self.statusBar.showMessage("Committing to SVN...")
+
+            # Usar credenciais do SVN se disponíveis
+            svn_username = self.config.get("credentials.svn.username")
+            svn_password = self.config.get("credentials.svn.password")
+
+            success, result = self.svn_manager.commit(
+                selected_files,
+                commit_message,
+                username=svn_username,
+                password=svn_password
+            )
+
+            if success:
+                QMessageBox.information(self, "Success",
+                                      f"Successfully committed {len(selected_files)} files to SVN")
+                self.statusBar.showMessage(f"SVN commit completed", 3000)
+                self.update_status()
+            else:
+                QMessageBox.critical(self, "Error", f"SVN commit failed:\n{result}")
+                self.statusBar.showMessage("SVN commit failed", 3000)
     
     def start_sync_repos(self):
         """Inicia sincronização de ambos os repositórios"""
@@ -788,11 +887,11 @@ class MainWindow(QMainWindow):
             return
         
         # Limpar threads antigas que já terminaram
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]
-        
+        self.cleanup_threads()
+
         # Usar worker thread para operação de longa duração
         self.statusBar.showMessage("Synchronizing repositories...")
-        
+
         # Obter direção de sincronização das configurações
         sync_direction = self.config.get("sync.direction", "bidirectional")
         
@@ -844,8 +943,8 @@ class MainWindow(QMainWindow):
             return
         
         # Limpar threads antigas que já terminaram
-        self.active_threads = [t for t in self.active_threads if t.isRunning()]
-        
+        self.cleanup_threads()
+
         # Fazer checkout
         self.statusBar.showMessage(f"Checking out branch '{branch_name}'...")
         worker = WorkerThread(self.git_manager.repo.git.checkout, branch_name)
@@ -905,10 +1004,11 @@ class MainWindow(QMainWindow):
                 self.git_manager = GitManager(self.local_working_copy, self.logger)
                 self.svn_manager = SVNManager(self.local_working_copy, self.logger)
                 self.sync_manager = SyncManager(
-                    self.git_manager, 
-                    self.svn_manager, 
-                    self.logger, 
-                    self.config
+                    self.git_manager,
+                    self.svn_manager,
+                    self.logger,
+                    self.config,
+                    self.sync_history
                 )
                 
                 # Verificar se auto-sync estava ativo e reiniciar
@@ -951,9 +1051,10 @@ class MainWindow(QMainWindow):
         if not self.sync_manager:
             QMessageBox.critical(self, "Error", "Sync manager not initialized")
             return
-        
-        # TODO: Implementar diálogo de configuração de auto-sync
-        QMessageBox.information(self, "Not Implemented", "Auto-sync settings dialog not implemented yet")
+
+        from ui.qt.auto_sync_dialog import AutoSyncDialog
+        auto_sync_dialog = AutoSyncDialog(self, self.auto_sync_manager, self.config)
+        auto_sync_dialog.exec()
     
     def clear_log(self):
         """Limpa o widget de log"""
@@ -962,21 +1063,78 @@ class MainWindow(QMainWindow):
     
     def show_about(self):
         """Mostra o diálogo 'Sobre'"""
-        about_text = """Git-SVN Sync Tool
+        about_text = """<h2>Git-SVN Sync Tool</h2>
+<p><b>Version:</b> 1.0.0</p>
+<p>A modern tool for synchronizing Git and SVN repositories.</p>
 
-Version: 1.0.0
-A tool for synchronizing Git and SVN repositories.
+<h3>Features:</h3>
+<ul>
+<li>Git and SVN repository management</li>
+<li>Bidirectional synchronization</li>
+<li>Diff viewing with syntax highlighting</li>
+<li>Branch management</li>
+<li>Commit templates</li>
+<li>Task integration (Jira/Trello)</li>
+<li>Automatic synchronization</li>
+<li>Sync history tracking</li>
+</ul>
 
-Features:
-- Git and SVN repository management
-- Synchronized commits
-- Diff viewing
-- Branch management
-- Commit templates
-
-Licensed under MIT License
+<p><b>License:</b> MIT License<br>
+<b>Author:</b> João Ferreira</p>
 """
         QMessageBox.about(self, "About Git-SVN Sync Tool", about_text)
+
+    def show_sync_history(self):
+        """Mostra o histórico de sincronizações"""
+        if not self.sync_history:
+            QMessageBox.information(self, "Info", "Sync history not available")
+            return
+
+        stats = self.sync_history.get_stats()
+        recent = self.sync_history.get_recent(20)
+
+        history_text = f"""<h3>Synchronization History</h3>
+
+<p><b>Statistics:</b></p>
+<ul>
+<li>Total synchronizations: {stats['total']}</li>
+<li>Successful: {stats['successful']} ({stats['success_rate']:.1f}%)</li>
+<li>Failed: {stats['failed']}</li>
+</ul>
+
+<p><b>Recent synchronizations:</b></p>
+<table border="1" cellpadding="5" style="border-collapse: collapse;">
+<tr style="background-color: #3498db; color: white;">
+<th>Date/Time</th>
+<th>Type</th>
+<th>Status</th>
+<th>Files</th>
+</tr>
+"""
+
+        for entry in recent:
+            timestamp = datetime.fromisoformat(entry['timestamp']).strftime("%Y-%m-%d %H:%M:%S")
+            sync_type = entry['type'].replace('_', ' → ').upper()
+            status = "✅ Success" if entry['success'] else "❌ Failed"
+            files = entry.get('files_count', 0)
+
+            row_color = "#d5f4e6" if entry['success'] else "#f8d7da"
+            history_text += f"""<tr style="background-color: {row_color};">
+<td>{timestamp}</td>
+<td>{sync_type}</td>
+<td>{status}</td>
+<td>{files}</td>
+</tr>
+"""
+
+        history_text += "</table>"
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Synchronization History")
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(history_text)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
     
     def show_dependency_warning(self, missing_deps):
         """Mostra aviso sobre dependências ausentes"""

@@ -3,16 +3,18 @@
 import os
 import shutil
 import time
+import traceback
 from datetime import datetime
 import tempfile
 
 class SyncManager:
-    def __init__(self, git_manager, svn_manager, logger, config_manager):
+    def __init__(self, git_manager, svn_manager, logger, config_manager, sync_history=None):
         """Inicializa o gerenciador de sincronização"""
         self.git_manager = git_manager
         self.svn_manager = svn_manager
         self.logger = logger
         self.config = config_manager
+        self.sync_history = sync_history
         self.working_dir = git_manager.working_dir if git_manager else None
         
     def check_prerequisites(self):
@@ -107,13 +109,18 @@ class SyncManager:
             
             if svn_commit_success:
                 self.logger.log(f"SVN commit completed successfully: {svn_commit_message}", "SUCCESS")
+                if self.sync_history:
+                    self.sync_history.add_entry("git_to_svn", True, len(files_to_sync), "Success")
                 return True, "Synchronization completed successfully"
             else:
                 self.logger.log(f"SVN commit failed: {svn_commit_message}", "ERROR")
+                if self.sync_history:
+                    self.sync_history.add_entry("git_to_svn", False, 0, f"Failed: {svn_commit_message}")
                 return False, f"SVN commit failed: {svn_commit_message}"
                 
         except Exception as e:
             self.logger.log(f"Error during Git to SVN synchronization: {str(e)}", "ERROR")
+            self.logger.log(traceback.format_exc(), "DEBUG")
             return False, str(e)
     
     def sync_svn_to_git(self):

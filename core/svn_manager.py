@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import traceback
 from datetime import datetime
 
 class SVNManager:
@@ -35,26 +36,34 @@ class SVNManager:
         """Realiza checkout do repositório SVN"""
         if not self.check_svn_command():
             return False, "SVN command not available"
-            
+
         repo_url = url or self.svn_url
         if not repo_url:
             return False, "SVN repository URL not set"
-            
+
         self.logger.log(f"Checking out SVN repository from {repo_url}...")
-        
+
         try:
-            cmd = ["svn", "checkout", repo_url, self.working_dir]
-            
-            # Adicionar credenciais se fornecidas
-            if username and password:
-                cmd.extend(["--username", username, "--password", password, "--non-interactive"])
-                
+            cmd = ["svn", "checkout", repo_url, self.working_dir, "--non-interactive"]
+
+            # Adicionar credenciais de forma mais segura via stdin ou environment
+            env = os.environ.copy()
+            if username:
+                cmd.extend(["--username", username])
+                if password:
+                    # Usar --password-from-stdin quando disponível (SVN 1.10+)
+                    # Por segurança, alertar no log que credenciais estão sendo usadas
+                    self.logger.log("Using provided credentials (password hidden)", "DEBUG")
+                    cmd.append("--password-from-stdin")
+
             process = subprocess.run(
                 cmd,
+                input=password if (username and password) else None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=os.path.dirname(self.working_dir)
+                cwd=os.path.dirname(self.working_dir),
+                env=env
             )
             
             if process.returncode == 0:
@@ -68,6 +77,7 @@ class SVNManager:
                 
         except Exception as e:
             self.logger.log(f"Error during SVN checkout: {str(e)}", "ERROR")
+            self.logger.log(traceback.format_exc(), "DEBUG")
             return False, str(e)
     
     def get_status(self):
@@ -247,25 +257,31 @@ class SVNManager:
                             self.logger.log(f"Error adding file {file_path}: {add_process.stderr.strip()}", "ERROR")
             
             # Preparar comando de commit
-            cmd = ["svn", "commit"]
-            
+            cmd = ["svn", "commit", "--non-interactive"]
+
             # Adicionar arquivos específicos
             cmd.extend(files)
-            
+
             # Adicionar mensagem
             cmd.extend(["-m", message])
-            
-            # Adicionar credenciais se fornecidas
-            if username and password:
-                cmd.extend(["--username", username, "--password", password, "--non-interactive"])
-            
+
+            # Adicionar credenciais de forma mais segura
+            env = os.environ.copy()
+            if username:
+                cmd.extend(["--username", username])
+                if password:
+                    self.logger.log("Using provided credentials for commit (password hidden)", "DEBUG")
+                    cmd.append("--password-from-stdin")
+
             # Executar commit
             process = subprocess.run(
                 cmd,
+                input=password if (username and password) else None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=self.working_dir
+                cwd=self.working_dir,
+                env=env
             )
             
             if process.returncode == 0:

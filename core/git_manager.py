@@ -2,6 +2,7 @@
 
 import os
 import git
+import traceback
 from git import GitCommandError
 
 class GitManager:
@@ -53,6 +54,7 @@ class GitManager:
             
         except Exception as e:
             self.logger.log(f"Error initializing Git repository: {str(e)}", "ERROR")
+            self.logger.log(traceback.format_exc(), "DEBUG")
             return False
     
     def get_status(self):
